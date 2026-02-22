@@ -1,9 +1,9 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Credicel POS - Permanente</title>
+    <title>Credicel POS - V8 Dinámico</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         .product-card { transition: all 0.2s; border: 2px solid #e2e8f0; cursor: pointer; user-select: none; }
@@ -21,7 +21,7 @@
 <body class="bg-slate-50 font-sans h-screen flex flex-col overflow-hidden">
 
     <div id="loading-overlay" class="fixed inset-0 bg-blue-900/50 z-[300] flex items-center justify-center backdrop-blur-sm">
-        <div class="bg-white p-5 rounded-2xl font-black text-blue-900 animate-pulse uppercase">Sincronizando...</div>
+        <div class="bg-white p-5 rounded-2xl font-black text-blue-900 animate-pulse uppercase" id="loading-text">Sincronizando...</div>
     </div>
 
     <div id="sidebar-corte" class="sidebar closed fixed inset-y-0 left-0 bg-white z-[250] shadow-2xl flex flex-col p-6 border-r-4 border-blue-900">
@@ -102,31 +102,35 @@
     </div>
 
     <script>
-        const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwb1kO-Ong_XQiC3YazF4p_Ji9S0OBX-ke7UT8m3QMDMGucQEwUf4RsR0VrKnibTWMmSw/exec";
-        const PRODUCTOS = [
-            {id:'CA01', n:'MICA', p:40}, {id:'CA02', n:'MICA 9D', p:90}, {id:'CA03', n:'MICA PRIV', p:150},
-            {id:'CA04', n:'CABLE V8', p:75}, {id:'CA05', n:'CABLE C', p:75}, {id:'CA06', n:'CABLE IP', p:75},
-            {id:'CA07', n:'CARGADOR V8', p:125}, {id:'CA08', n:'CARGADOR C', p:125}, {id:'CA09', n:'CARGADOR IP', p:125},
-            {id:'CA10', n:'CUBO USB', p:120}, {id:'CA11', n:'CUBO C', p:75}, {id:'CA12', n:'POWER BANK', p:220},
-            {id:'CA13', n:'BOCINA', p:180}, {id:'CA14', n:'FUNDA A', p:180}, {id:'CA15', n:'FUNDA B', p:150},
-            {id:'CA16', n:'FUNDA C', p:120}, {id:'CA17', n:'FUNDA D', p:100}, {id:'CA18', n:'FUNDA UNI', p:150},
-            {id:'CA19', n:'AUD', p:75}, {id:'CA20', n:'AUD BT', p:350}, {id:'CA21', n:'TABLET', p:0},
-            {id:'CA22', n:'MEMORIA USB', p:180}, {id:'CA23', n:'MEMORIA SD', p:180}, {id:'CA24', n:'CABLE C-C', p:75},
-            {id:'CA25', n:'CABLE IP-C', p:75}, {id:'CA26', n:'FUNDA A+', p:220}, {id:'CA27', n:'CARG. IP 15', p:250},
-            {id:'CA28', n:'C. AUTO V8', p:145}, {id:'CA29', n:'C. RAPIDA', p:225}, {id:'CA30', n:'CABLE 3-1', p:95},
-            {id:'REP', n:'REPARACION', p:0}, {id:'GAS', n:'GASTO', p:0}
-        ];
-
+        // URL DE TU NUEVO APPS SCRIPT
+        const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwre1I_fozMa3-KS9KRIy-cyn-6FsSZWznJQRElJnQhbWDK9VwG9TsUvzREXsSrwm2Mvw/exec";
+        
+        let PRODUCTOS = []; 
         let carrito = []; 
         let vendedorActivo = "";
         
-        // CARGA DE DATOS PERSISTENTES
         let ventasAcumuladasDia = JSON.parse(localStorage.getItem('ventasCredicel')) || {};
         let gastosDelDia = JSON.parse(localStorage.getItem('gastosCredicel')) || [];
 
         function saveMemory() {
             localStorage.setItem('ventasCredicel', JSON.stringify(ventasAcumuladasDia));
             localStorage.setItem('gastosCredicel', JSON.stringify(gastosDelDia));
+        }
+
+        async function cargarProductos() {
+            document.getElementById('loading-overlay').style.display = 'flex';
+            document.getElementById('loading-text').innerText = "Sincronizando Precios...";
+            try {
+                const res = await fetch(WEB_APP_URL + "?getProducts=true");
+                const data = await res.json();
+                PRODUCTOS = data;
+                PRODUCTOS.push({id:'REP', n:'REPARACION', p:0});
+                PRODUCTOS.push({id:'GAS', n:'GASTO', p:0});
+                pintarProductos();
+            } catch (e) {
+                alert("Error al conectar con la base de datos.");
+            }
+            document.getElementById('loading-overlay').style.display = 'none';
         }
 
         function toggleCorte() {
@@ -157,7 +161,7 @@
                 document.getElementById('label-vendedor').innerText = vendedorActivo;
                 document.getElementById('login-screen').style.display = 'none';
                 document.getElementById('main-app').style.display = 'flex';
-                pintarProductos();
+                cargarProductos(); 
             } else { alert("PIN Inválido"); }
         }
 
@@ -216,22 +220,27 @@
         async function finalizarVenta() {
             const btn = document.getElementById('btn-finalizar'); btn.disabled = true;
             document.getElementById('loading-overlay').style.display = 'flex';
+            
             carrito.forEach(item => {
                 if(!ventasAcumuladasDia[item.id]) { ventasAcumuladasDia[item.id] = { cant: 0, total: 0 }; }
                 ventasAcumuladasDia[item.id].cant += 1; ventasAcumuladasDia[item.id].total += item.p;
             });
             saveMemory();
+
             const itemsSimplificados = carrito.map(i => ({ codigo: i.id, cantidad: 1, precio: i.p }));
             new Image().src = WEB_APP_URL + "?user=" + encodeURIComponent(vendedorActivo) + "&items=" + encodeURIComponent(JSON.stringify(itemsSimplificados));
+            
             setTimeout(() => {
-                alert("✅ REGISTRADO"); carrito = []; actualizarCarrito(); cerrarCobro();
-                document.getElementById('loading-overlay').style.display = 'none'; btn.disabled = false;
+                alert("✅ VENTA REGISTRADA");
+                carrito = []; actualizarCarrito(); cerrarCobro();
+                document.getElementById('loading-overlay').style.display = 'none';
+                btn.disabled = false;
             }, 1200);
         }
 
         function ejecutarCorte() {
             const real = document.getElementById('corte-monto').innerText;
-            if(confirm(`¿CERRAR TURNO?\nEfectivo Real: ${real}`)) {
+            if(confirm(`¿Deseas CERRAR TURNO?\nEfectivo Real: ${real}`)) {
                 localStorage.removeItem('ventasCredicel');
                 localStorage.removeItem('gastosCredicel');
                 window.location.reload();
